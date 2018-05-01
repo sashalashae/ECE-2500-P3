@@ -3,9 +3,10 @@ Sasha Morgan
 ECE 2500
 Cache Compiler
 '''
-#from _future_ import division
+
 import sys
 import math
+from math import floor
 
 out = 0
 outcache = []
@@ -18,72 +19,104 @@ outcm = []
 rwaddress = []
 
 
-def direct_mapped(caches, blocks, wp, cachep):
-    # Block Count
-    bc = int(caches / blocks)
-    cpr = 1
-    hr = 0.00
+class Block:
+    def __init__(self):
+        self.db = 0
+        self.v = 0
+        self.t = -1
+        self.life = 0
+
+
+def multiwaymap(caches, blocks, wp, cachep):
+    bc = int(floor(caches / blocks))
     hc = 0
-    mc = 0
     cm = 0
-    tag = []
-    validation = []
-    dirtybit = []
-    j = 0
-    while (j < bc):
-        tag.append(0)
-        validation.append(0)
-        dirtybit.append(0)
-        j = j + 1
+    mc = 0
+    ls = 0
+    bsets = 0
+    if (cachep == "DM"):
+        bsets = 1
+    if (cachep == "2W"):
+        bsets = 2
+    if (cachep == "4W"):
+        bsets = 4
+    if (cachep == "FA"):
+        bsets = bc
+    sets = int(floor(bc / bsets))
+    ssize = int(floor(caches / bsets))
+    cho = bsets
+
+    tag = [[-1 for x in range(cho)] for y in range(sets)]
+    db = [[0 for x in range(cho)] for y in range(sets)]
+    life = [[0 for x in range(cho)] for y in range(sets)]
+    validation = [[0 for x in range(cho)] for y in range(sets)]
 
     count = 0
     while (count < len(rwaddress)):
         tempadd = rwaddress[count][1]  # read word from address
         tempinst = rwaddress[count][0]
+        index = int(floor(tempadd / blocks)) % sets
+        ctag = int(floor(tempadd / ssize))
+        tlist = tag[index]
 
-        # Determine the block index
-        index = int(tempadd / blocks)
-        index = index % bc
-        ctag = int(tempadd / caches)
+        hit = 0
+        bi = 0
 
-        if (tempinst == "read"):
-            if (tag[index] == ctag):
-                hc = hc + 1
-            elif (tag[index] != ctag or validation[index] == 0):
-                tag[index] = ctag
-                mc = mc + blocks
-                if (validation[index] == 1):
-                    validation[index] = 0
+        tt = 0
+        while (tt < len(tlist)):
+            if (tlist[tt] == ctag):
+                bi = tt
+                if (validation[index][bi] == 1):
+                    hit = 1
+                    break
+            tt = tt + 1
+
+        if (hit == 1):
+            hc = hc + 1
+            life[index][bi] = count + 1
+
+            if (tempinst == "write"):
+                if (wp == "WB"):
+                    db[index][bi] = 1
+                if (wp == "WT"):
+                    cm = cm + 4
+        else:
+            mc = mc + blocks
+            alist = life[index]
+            cnt = 0
+
+            minv = min(life[index])
+            while (cnt < len(alist)):
+                if (minv == alist[cnt]):
+                    bi = cnt
+                    break
+                cnt = cnt + 1
+
+            tag[index][bi] = ctag
+            validation[index][bi] = 1
+            life[index][bi] = count + 1
+            if (wp == "WB"):
+                if (db[index][bi] == 1):
                     cm = cm + blocks
-        if (tempinst == "write"):
-            if (tag[index] == ctag):
-                hc = hc + 1
+                    db[index][bi] = 0
+            if (tempinst == "write"):
+                if (wp == "WB"):
+                    db[index][bi] = 1
                 if (wp == "WT"):
                     cm = cm + 4
-                elif (wp == "WB"):
-                    validation[index] = 1
-            elif (tag[index] != ctag or validation[index] == 0):
-                if (wp == "WT"):
-                    tag[index] = ctag
-                    mc = mc + blocks
-                    cm = cm + 4
-                elif (wp == "WB"):
-                    mc = mc + blocks
-                    tag[index] = ctag
-                    if (validation[index] == 1):
-                        cm = cm + blocks
-                    else:
-                        validation[index] = 1
-                        dirtybit[index] = 1
-
         count = count + 1
-    inc = 0
-    while (inc < len(validation)):
-        if (validation[inc] == 1):
-            cm = cm + blocks
-        inc = inc + 1
 
-    hr = round((hc / len(rwaddress)), 2)
+    pp = 0
+    xx = 0
+    while (pp < len(db)):
+        while (xx < len(db[pp])):
+            if (db[pp][xx] == 1):
+                cm = cm + blocks
+            xx = xx + 1
+        xx = 0
+        pp = pp + 1
+
+    hr = hc / len(rwaddress)
     outcache.append(caches)
     outblock.append(blocks)
     outmap.append(cachep)
@@ -92,13 +125,6 @@ def direct_mapped(caches, blocks, wp, cachep):
     outmc.append(mc)
     outcm.append(cm)
 
-
-# End of Direct Mapped
-
-# Start of Fully associative
-# def full_assoc(caches, blocks, wp, cachep):
-
-# End of Fully Associative
 
 if __name__ == '__main__':
 
@@ -109,12 +135,12 @@ if __name__ == '__main__':
 
     # The command line argument
 
-    if len(sys.argv) != 2:
+    if len(sys.argv) != 3:
         sys.stderr.write("Command line format: python3 main.py <trace file>\n")
         sys.exit(0)
 
     # reading in the data
-    if len(sys.argv) == 2:
+    if len(sys.argv) == 3:
         f = (open(sys.argv[1]))
         rows = f.readlines()
         count = 0
@@ -135,9 +161,9 @@ if __name__ == '__main__':
                 while (r4 < len(wtype)):
                     # Caches c(csizes[read1], bsizes[r2], wtype[r4], ctype[r3])
                     out = out + 1
-                    if (ctype[r3] == "DM"):
-                        direct_mapped(csizes[read1], bsizes[r2], wtype[r4],
-                                      ctype[r3])
+                    multiwaymap(csizes[read1], bsizes[r2], wtype[r4],
+                                ctype[r3])
+
                     r4 = r4 + 1
                     # End of Wtype
                 r4 = 0
@@ -151,18 +177,16 @@ if __name__ == '__main__':
         r3 = 0
         r4 = 0
         # end of
-    # outfile = open("mytest1.result", 'w')
+    outfile = open(sys.argv[2], 'w')
 
     cnt = 0
-    te = 9.99
-    #stringout = ""
+    stringout = ""
+
     while (cnt < out):
-
-        stringout = str(outcache[cnt]) + " " + str(outblock[cnt]) + " " + str(
-            outmap[cnt]) + " " + str(outwrite[cnt]) + " " + str(
-                round(outhr[cnt], 2)) + " " + str(outmc[cnt]) + " " + str(
-                    outcm[cnt])
-
-        print(stringout)
+        stringout = str(outcache[cnt]) + "\t" + str(
+            outblock[cnt]) + "\t" + str(outmap[cnt]) + "\t" + str(
+                outwrite[cnt]) + "\t" + ("%0.2f" % outhr[cnt]) + "\t" + str(
+                    outmc[cnt]) + "\t" + str(outcm[cnt]) + "\n"
+        #print(stringout)
+        outfile.write(stringout)
         cnt = cnt + 1
-        #outfile.write(stringout)
